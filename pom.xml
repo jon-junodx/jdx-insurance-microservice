@@ -16,7 +16,7 @@
         <v.freemarker>2.3.31</v.freemarker>
     </properties>
 
-    <dependencyManagement>
+    <!--dependencyManagement>
         <dependencies>
             <dependency>
                 <groupId>software.amazon.awssdk</groupId>
@@ -26,11 +26,11 @@
                 <scope>import</scope>
             </dependency>
         </dependencies>
-    </dependencyManagement>
+    </dependencyManagement-->
 
 
     <dependencies>
-        <dependency>
+        <!--dependency>
             <groupId>software.amazon.awssdk</groupId>
             <artifactId>rds</artifactId>
         </dependency>
@@ -38,16 +38,21 @@
             <groupId>com.amazonaws</groupId>
             <artifactId>aws-java-sdk-rdsdata</artifactId>
             <version>1.12.187</version>
+        </dependency-->
+        <dependency>
+            <groupId>com.amazonaws</groupId>
+            <artifactId>aws-java-sdk-sqs</artifactId>
+            <version>1.12.406</version>
         </dependency>
         <dependency>
             <groupId>com.amazonaws</groupId>
             <artifactId>aws-lambda-java-core</artifactId>
-            <version>1.2.1</version>
+            <version>1.2.2</version>
         </dependency>
         <dependency>
             <groupId>com.amazonaws</groupId>
             <artifactId>aws-java-sdk-lambda</artifactId>
-            <version>1.11.648</version>
+            <version>1.12.406</version>
         </dependency>
         <dependency>
             <groupId>com.amazonaws</groupId>
@@ -59,11 +64,11 @@
             <artifactId>aws-lambda-java-log4j2</artifactId>
             <version>1.5.1</version>
         </dependency>
-        <dependency>
+        <!--dependency>
             <groupId>software.amazon.rdsdata</groupId>
             <artifactId>rds-data-api-client-library-java</artifactId>
             <version>2.0.0</version>
-        </dependency>
+        </dependency-->
         <dependency>
             <groupId>com.junodx</groupId>
             <artifactId>api</artifactId>
