@@ -2,6 +2,7 @@ package com.junodx.functions;
 
 import com.amazonaws.auth.AWSStaticCredentialsProvider;
 import com.amazonaws.auth.BasicAWSCredentials;
+import com.amazonaws.regions.Region;
 import com.amazonaws.regions.Regions;
 import com.amazonaws.services.lambda.runtime.Context;
 import com.amazonaws.services.lambda.runtime.RequestHandler;
@@ -29,6 +30,7 @@ public class InsuranceService implements RequestHandler<Map<String,String>, Stri
     Map<OrderStatusType, OrderProcess> functions = new HashMap<>();
 
     final String queueUrl = "https://sqs.us-east-2.amazonaws.com/352009045849/jdx-insurance-update-queue.fifo";
+    //final Region awsRegion = Regions.US_EAST_2;
 
     public InsuranceService() {
         functions.put(OrderStatusType.CREATED, new OrderProcessGetQuote());
@@ -48,14 +50,15 @@ public class InsuranceService implements RequestHandler<Map<String,String>, Stri
 
         AmazonSQS sqs = AmazonSQSClientBuilder.standard()
                 .withCredentials(new AWSStaticCredentialsProvider(credentials))
-                .withRegion(Regions.US_EAST_1)
+                .withRegion(Regions.US_EAST_2)
                 .build();
 
         ReceiveMessageRequest receiveMessageRequest = new ReceiveMessageRequest(queueUrl)
                 .withWaitTimeSeconds(10)
                 .withMaxNumberOfMessages(10);
 
-        List<Message> sqsMessages = sqs.receiveMessage(receiveMessageRequest).getMessages();
+       // List<Message> sqsMessages = sqs.receiveMessage(receiveMessageRequest).getMessages();
+        List<Message> sqsMessages = sqs.receiveMessage(queueUrl).getMessages();
 
    System.out.println("Rcvd " + sqsMessages.size() + " messages");
 
