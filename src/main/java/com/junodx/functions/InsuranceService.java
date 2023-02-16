@@ -57,8 +57,8 @@ public class InsuranceService implements RequestHandler<Map<String,String>, Stri
                 .withWaitTimeSeconds(10)
                 .withMaxNumberOfMessages(10);
 
-       // List<Message> sqsMessages = sqs.receiveMessage(receiveMessageRequest).getMessages();
-        List<Message> sqsMessages = sqs.receiveMessage(queueUrl).getMessages();
+        List<Message> sqsMessages = sqs.receiveMessage(receiveMessageRequest).getMessages();
+        //List<Message> sqsMessages = sqs.receiveMessage(queueUrl).getMessages();
 
    System.out.println("Rcvd " + sqsMessages.size() + " messages");
 
