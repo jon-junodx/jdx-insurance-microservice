@@ -5,12 +5,15 @@ import com.amazonaws.auth.BasicAWSCredentials;
 import com.amazonaws.regions.Region;
 import com.amazonaws.regions.Regions;
 import com.amazonaws.services.lambda.runtime.Context;
+import com.amazonaws.services.lambda.runtime.LambdaLogger;
 import com.amazonaws.services.lambda.runtime.RequestHandler;
 
 import com.amazonaws.services.sqs.AmazonSQS;
 import com.amazonaws.services.sqs.AmazonSQSClientBuilder;
 import com.amazonaws.services.sqs.model.*;
 import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.DeserializationFeature;
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.junodx.api.connectors.messaging.payloads.EntityPayload;
 import com.junodx.api.connectors.messaging.payloads.EventType;
@@ -18,6 +21,7 @@ import com.junodx.api.models.commerce.Order;
 import com.junodx.api.models.commerce.OrderStatus;
 import com.junodx.api.models.commerce.types.OrderStatusType;
 import com.junodx.api.services.exceptions.JdxServiceException;
+import com.junodx.api.util.UrlClientConnection;
 import libs.jdx.*;
 
 
@@ -25,7 +29,13 @@ import java.util.*;
 
 public class InsuranceService implements RequestHandler<Map<String,String>, String> {
 
-    ObjectMapper mapper = new ObjectMapper();
+    ObjectMapper mapper = new ObjectMapper()
+            .configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
+
+    LambdaLogger logger;
+
+    ConfigurationUtils utils = new ConfigurationUtils();
+    JunoService junoService;
 
     Map<OrderStatusType, OrderProcess> functions = new HashMap<>();
 
@@ -43,40 +53,39 @@ public class InsuranceService implements RequestHandler<Map<String,String>, Stri
 
     @Override
     public String handleRequest(Map<String, String> stringStringMap, Context context) {
+        logger = context.getLogger();
+        junoService = new JunoService(utils.getJunoConnectionFromConfiguration(), logger);
 
         //final AmazonSQS sqs = AmazonSQSClientBuilder.defaultClient();
-
-        BasicAWSCredentials credentials = new BasicAWSCredentials("AKIAVD5K7Y5MSAT5SVMF", "71HHX/dfAHqL1dtLEQTHHduZrgAntyxkA0hfK+cR");
-
-        AmazonSQS sqs = AmazonSQSClientBuilder.standard()
-                .withCredentials(new AWSStaticCredentialsProvider(credentials))
-                .withRegion(Regions.US_EAST_2)
-                .build();
-
-        ReceiveMessageRequest receiveMessageRequest = new ReceiveMessageRequest(queueUrl)
-                .withWaitTimeSeconds(10)
-                .withMaxNumberOfMessages(10);
-
-        List<Message> sqsMessages = sqs.receiveMessage(receiveMessageRequest).getMessages();
-        //List<Message> sqsMessages = sqs.receiveMessage(queueUrl).getMessages();
-
-   System.out.println("Rcvd " + sqsMessages.size() + " messages");
-
-        Map<String, List<OrderEvent>> list = processOrders(sqsMessages);
-        deleteProcessedMessages(list, sqs, sqsMessages);
-
         try {
-            for(Message m : sqsMessages)
-                System.out.println(mapper.writeValueAsString(m.getBody()));
-        } catch (JsonProcessingException e) {
+
+            BasicAWSCredentials credentials = new BasicAWSCredentials("AKIAVD5K7Y5MSAT5SVMF", "71HHX/dfAHqL1dtLEQTHHduZrgAntyxkA0hfK+cR");
+
+            AmazonSQS sqs = AmazonSQSClientBuilder.standard()
+                    .withCredentials(new AWSStaticCredentialsProvider(credentials))
+                    .withRegion(Regions.US_EAST_2)
+                    .build();
+
+            ReceiveMessageRequest receiveMessageRequest = new ReceiveMessageRequest(queueUrl)
+                    .withWaitTimeSeconds(10)
+                    .withMaxNumberOfMessages(10);
+
+            List<Message> sqsMessages = sqs.receiveMessage(receiveMessageRequest).getMessages();
+            //List<Message> sqsMessages = sqs.receiveMessage(queueUrl).getMessages();
+
+            System.out.println("Rcvd " + sqsMessages.size() + " messages");
+
+            Map<String, List<OrderEvent>> list = processOrders(sqsMessages);
+            deleteProcessedMessages(list, sqs, sqsMessages);
+
+            return "200 OK: ";
+        } catch (Exception e) {
             e.printStackTrace();
+            return "400 Bad Request";
         }
-
-
-        return "200 OK: ";
     }
 
-    public Map<String, List<OrderEvent>> processOrders(List<Message> messages) throws JdxServiceException {
+    public Map<String, List<OrderEvent>> processOrders(List<Message> messages) throws Exception {
         try {
             Map<String, List<OrderEvent>> orderLists = buildOrderLists(messages);
             Iterator eventKeys = null;
@@ -96,10 +105,13 @@ public class InsuranceService implements RequestHandler<Map<String,String>, Stri
                     //Iterate through each order event and invoke the related function
                     for (OrderEvent event : events) {
                         OrderProcess process = functions.get(event.getType());
+                        OrderProcessResponse response = null;
                         if (process != null) {
-                            process.invoke(event.getOrder());
-                            event.setProcessed(true);
-                            processed = true;
+                            response = process.invoke(junoService, event.getOrder());
+                            if(response.isProcessed()) {
+                                event.setProcessed(true);
+                                processed = true;
+                            }
                         } else
                             event.setProcessed(true); //cannot find a handler for this order status type, so set to processed to have the message get deleted
                     }
@@ -114,12 +126,9 @@ public class InsuranceService implements RequestHandler<Map<String,String>, Stri
             }
 
             return orderLists;
-        } catch (JdxServiceException e){
-            e.printStackTrace();
-            throw e;
         } catch (Exception e) {
             e.printStackTrace();
-            throw new JdxServiceException("Cannot process order events " + e.getMessage());
+            throw e;
         }
     }
 
@@ -129,18 +138,26 @@ public class InsuranceService implements RequestHandler<Map<String,String>, Stri
      * @return
      * @throws JdxServiceException
      */
-    public Map<String, List<OrderEvent>> buildOrderLists(List<Message> messages) throws JdxServiceException {
+    public Map<String, List<OrderEvent>> buildOrderLists(List<Message> messages) throws Exception {
         Map<String, List<OrderEvent>> orders = new HashMap<>();
 
         try {
             for (Message message : messages) {
-        System.out.println("Getting message " + mapper.writeValueAsString(message.getBody()));
+
+                JsonNode node = mapper.readTree(message.getBody());
+                JsonNode messageContents = null;
+
+                if(node.has("Message"))
+                    messageContents = node.get("Message");
+
                 EntityPayload event = null;
 
                 try {
-                    event = mapper.convertValue(message.getBody(), EntityPayload.class);
+                    event = mapper.readValue(messageContents.textValue(), EntityPayload.class);
                 } catch (Exception e) {
+                    e.printStackTrace();
                     System.err.println("Exception converting message: " + e.getMessage());
+                    continue;
                 }
 
                 if(event == null)
@@ -174,16 +191,14 @@ public class InsuranceService implements RequestHandler<Map<String,String>, Stri
             }
 
             return orders;
-        } catch (JdxServiceException e){
-            e.printStackTrace();
-            throw e;
+
         } catch (Exception e) {
             e.printStackTrace();
-            throw new JdxServiceException("Cannot process orders from message list");
+            throw e;
         }
     }
 
-    public void deleteProcessedMessages(Map<String, List<OrderEvent>> events, AmazonSQS sqs, List<Message> messages) throws JdxServiceException {
+    public void deleteProcessedMessages(Map<String, List<OrderEvent>> events, AmazonSQS sqs, List<Message> messages) throws Exception {
         try {
             Iterator eventKeys = null;
 
@@ -208,7 +223,7 @@ public class InsuranceService implements RequestHandler<Map<String,String>, Stri
                     }
                 }
             }
-        } catch (JdxServiceException e){
+        } catch (Exception e){
             e.printStackTrace();
             throw e;
         }
