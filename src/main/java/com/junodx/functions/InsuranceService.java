@@ -29,7 +29,7 @@ import libs.jdx.*;
 
 import java.util.*;
 
-public class InsuranceService implements RequestHandler<Map<String,String>, String> {
+public class InsuranceService implements RequestHandler<Map<Object,String>, String> {
 
     ObjectMapper mapper = new ObjectMapper()
             .configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
@@ -55,7 +55,7 @@ public class InsuranceService implements RequestHandler<Map<String,String>, Stri
     }
 
     @Override
-    public String handleRequest(Map<String, String> stringStringMap, Context context) {
+    public String handleRequest(Map<Object, String> stringStringMap, Context context) {
         logger = context.getLogger();
         junoService = new JunoService(utils.getJunoConnectionFromConfiguration(), logger);
 
