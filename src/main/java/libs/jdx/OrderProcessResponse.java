@@ -1,6 +1,6 @@
 package libs.jdx;
 
-import com.junodx.api.models.commerce.Order;
+import libs.jdx.Order;
 
 import java.util.Date;
 
