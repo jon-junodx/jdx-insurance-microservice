@@ -17,7 +17,9 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.junodx.api.connectors.messaging.payloads.EntityPayload;
 import com.junodx.api.connectors.messaging.payloads.EventType;
-import com.junodx.api.models.commerce.Order;
+//import com.junodx.api.models.commerce.Order;
+import libs.jdx.Order;
+
 import com.junodx.api.models.commerce.OrderStatus;
 import com.junodx.api.models.commerce.types.OrderStatusType;
 import com.junodx.api.services.exceptions.JdxServiceException;
@@ -44,6 +46,7 @@ public class InsuranceService implements RequestHandler<Map<String,String>, Stri
 
     public InsuranceService() {
         functions.put(OrderStatusType.CREATED, new OrderProcessGetQuote());
+        //functions.put(OrderStatusType.APPROVED, new OrderProcessGetQuote());
         functions.put(OrderStatusType.SAMPLE_COLLECTED, new OrderProcessCreateAccession());
         functions.put(OrderStatusType.RECEIVED, new OrderProcessCreateAccession());
         functions.put(OrderStatusType.LABORATORY_PROCESSING, new OrderProcessCreateAccession());
@@ -66,17 +69,39 @@ public class InsuranceService implements RequestHandler<Map<String,String>, Stri
                     .withRegion(Regions.US_EAST_2)
                     .build();
 
-            ReceiveMessageRequest receiveMessageRequest = new ReceiveMessageRequest(queueUrl)
-                    .withWaitTimeSeconds(10)
-                    .withMaxNumberOfMessages(10);
+            String countOfMessages = sqs.getQueueAttributes(queueUrl, Collections.singletonList("ApproximateNumberOfMessages"))
+                    .getAttributes()
+                    .get("ApproximateNumberOfMessages");
 
-            List<Message> sqsMessages = sqs.receiveMessage(receiveMessageRequest).getMessages();
-            //List<Message> sqsMessages = sqs.receiveMessage(queueUrl).getMessages();
+            int msgCount = 0;
+            try {
+                if (countOfMessages != null)
+                    msgCount = Integer.valueOf(countOfMessages);
+            } catch (Exception e) {
+                System.err.println("Cannot obtain count of messages in the queue");
+            }
 
-            System.out.println("Rcvd " + sqsMessages.size() + " messages");
+            if(msgCount > 200)
+                msgCount = 200;
 
-            Map<String, List<OrderEvent>> list = processOrders(sqsMessages);
-            deleteProcessedMessages(list, sqs, sqsMessages);
+            System.out.println("Approximately " + msgCount + " messages to process.");
+
+            ReceiveMessageRequest receiveMessageRequest = null;
+
+            while(msgCount > 0) {
+                receiveMessageRequest = new ReceiveMessageRequest(queueUrl)
+                        .withWaitTimeSeconds(5)
+                        .withMaxNumberOfMessages(10);
+
+                List<Message> sqsMessages = sqs.receiveMessage(receiveMessageRequest).getMessages();
+
+                System.out.println("Rcvd " + sqsMessages.size() + " messages");
+
+                Map<String, List<OrderEvent>> list = processOrders(sqsMessages);
+                deleteProcessedMessages(list, sqs, sqsMessages);
+
+                msgCount -= 10;
+            }
 
             return "200 OK: ";
         } catch (Exception e) {
@@ -107,8 +132,9 @@ public class InsuranceService implements RequestHandler<Map<String,String>, Stri
                         OrderProcess process = functions.get(event.getType());
                         OrderProcessResponse response = null;
                         if (process != null) {
+            System.err.println("Order: " + event.getOrder().getId());
                             response = process.invoke(junoService, event.getOrder());
-                            if(response.isProcessed()) {
+                            if(response != null && response.isProcessed()) {
                                 event.setProcessed(true);
                                 processed = true;
                             }
@@ -164,10 +190,10 @@ public class InsuranceService implements RequestHandler<Map<String,String>, Stri
                     continue;
 
                 EventType eventType = event.getEvent();
-                if(eventType != null){
+                if (eventType != null) {
                     OrderEvent orderEvent = new OrderEvent();
                     Order order = mapper.convertValue(event.getEntity(), Order.class);
-                    if(order != null) {
+                    if (order != null) {
                         orderEvent.setOrder(order);
                         orderEvent.setType(order.getCurrentStatus());
                     }
@@ -176,8 +202,8 @@ public class InsuranceService implements RequestHandler<Map<String,String>, Stri
                     orderEvent.setProcessed(false);
 
                     List<OrderEvent> foundEvents = orders.get(order.getId());
-                    if(foundEvents != null) {
-                        if(foundEvents.size() == 0)
+                    if (foundEvents != null) {
+                        if (foundEvents.size() == 0)
                             foundEvents.add(orderEvent);
                         else
                             foundEvents.add(orderEvent);
@@ -186,7 +212,6 @@ public class InsuranceService implements RequestHandler<Map<String,String>, Stri
                         foundEvents.add(orderEvent);
                         orders.put(order.getId(), foundEvents);
                     }
-
                 }
             }
 
@@ -217,8 +242,8 @@ public class InsuranceService implements RequestHandler<Map<String,String>, Stri
                         if(event.isProcessed()) {
                             Optional<Message> m = messages.stream().filter(x->x.getMessageId().equals(event.getMessageId())).findAny();
                             if(m.isPresent())
-                                //sqs.deleteMessage(queueUrl, m.get().getReceiptHandle());
-                                System.out.println("Would have deleted " + m.get().getMessageId());
+                                sqs.deleteMessage(queueUrl, m.get().getReceiptHandle());
+                                System.out.println("Deleted " + m.get().getMessageId());
                         }
                     }
                 }
