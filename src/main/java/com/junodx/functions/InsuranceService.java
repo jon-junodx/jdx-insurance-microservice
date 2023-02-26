@@ -105,6 +105,7 @@ public class InsuranceService implements RequestHandler<Map<String,String>, Stri
 
             return "200 OK: ";
         } catch (Exception e) {
+      System.err.println("Got an error while trying to grab messages from the queue " + e.getMessage());
             e.printStackTrace();
             return "400 Bad Request";
         }
@@ -169,7 +170,7 @@ public class InsuranceService implements RequestHandler<Map<String,String>, Stri
 
         try {
             for (Message message : messages) {
-
+ System.err.println("Message: " + mapper.writeValueAsString(message.getBody()));
                 JsonNode node = mapper.readTree(message.getBody());
                 JsonNode messageContents = null;
 
